@@ -21,7 +21,7 @@ func (serverConfig ServerConfig) String() string {
 }
 
 type TcpServer struct {
-	nextId       int
+	nextId       int `json:server.port`
 	clientCount  int
 	serverConfig ServerConfig
 	listener     net.Listener
