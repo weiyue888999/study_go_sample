@@ -21,11 +21,14 @@ func main() {
 	}
 	log.Printf("connect success!!!\n")
 
-	min_len := 4 + 4 + 4
-	array := make([]byte, 0)
 	for {
-		arr := make([]byte, 4)
-		cnt, err := conn.Read(arr)
+
+		//read length
+		read_total_cnt := 0
+		length_array := make([]byte, 4)
+		var length uint32 = 0
+	read_head:
+		cnt, err := conn.Read(length_array)
 		if err != nil {
 
 			log.Printf("read error:%s\n", err.Error())
@@ -33,21 +36,16 @@ func main() {
 		}
 		if cnt > 0 {
 
-			log.Printf("read count:%d\n", cnt)
+			log.Printf("read cnt:%d\n", cnt)
+			read_total_cnt += cnt
 
-			array = append(array, arr...)
-			if len(array) >= min_len {
-
-				actual_length_arr := array[0:4]
-				var actual_length uint32 = uint32(binary.LittleEndian.Uint32(actual_length_arr))
-
-				split_length := actual_length + uint32(min_len)
-				packet := array[0:split_length]
-				process_packet(packet)
-
-				array = make([]byte, 0)
+			if read_total_cnt != 4 {
+				goto read_head
+			} else {
+				length = binary.LittleEndian.Uint32(length_array)
+				log.Printf("packet length:%d\n", length)
+				goto read_body
 			}
-
 		} else if cnt == 0 {
 
 			//log.Printf("read again\n")
@@ -56,15 +54,41 @@ func main() {
 			log.Printf("read error\n")
 			os.Exit(-1)
 		}
+	read_body:
+		read_total_cnt = 0
+		packet_array := make([]byte, length)
+	read_body_continue:
+		cnt, err = conn.Read(packet_array)
+		if err != nil {
+			log.Printf("read error:%s\n", err.Error())
+			os.Exit(-1)
+		} else {
+			if cnt > 0 {
+
+				log.Printf("read cnt:%d\n", cnt)
+
+				read_total_cnt += cnt
+				if uint32(read_total_cnt) == length {
+					process_packet(length, packet_array)
+				} else {
+					goto read_body_continue
+				}
+			} else if cnt == 0 {
+
+				//read again
+			} else {
+				log.Printf("read error\n")
+				os.Exit(-1)
+			}
+		}
 	}
 	conn.Close()
 }
 
-func process_packet(array []byte) {
+func process_packet(length uint32, array []byte) {
 
 	var seq uint32 = binary.LittleEndian.Uint32(array[0:4])
-	var length uint32 = binary.LittleEndian.Uint32(array[4:8])
-	var packet_type uint32 = binary.LittleEndian.Uint32(array[8:12])
+	var packet_type uint32 = binary.LittleEndian.Uint32(array[4:8])
 
 	log.Printf("process packet.length:%d,seq:%d,packet_type:%d.\n", length, seq, packet_type)
 }

@@ -20,8 +20,10 @@ func SendPing(conn net.Conn, seq uint32) {
 
 	sendTo := make([]byte, 0)
 
+	var length uint32 = 0
 	//seq
 	{
+		length += 4
 		arr := make([]byte, 4)
 		binary.LittleEndian.PutUint32(arr, seq)
 		sendTo = append(sendTo, arr...)
@@ -29,6 +31,7 @@ func SendPing(conn net.Conn, seq uint32) {
 
 	//type
 	{
+		length += 4
 		arr := make([]byte, 4)
 		binary.LittleEndian.PutUint32(arr, uint32(RequestType_Ping))
 		sendTo = append(sendTo, arr...)
@@ -37,8 +40,8 @@ func SendPing(conn net.Conn, seq uint32) {
 	//length
 	{
 		arr := make([]byte, 4)
-		binary.LittleEndian.PutUint32(arr, uint32(0))
-		sendTo = append(sendTo, arr...)
+		binary.LittleEndian.PutUint32(arr, uint32(length))
+		sendTo = append(arr, sendTo...)
 	}
 	cnt, err := conn.Write(sendTo)
 	if err != nil {
@@ -53,8 +56,11 @@ func SendPing(conn net.Conn, seq uint32) {
 func SendPong(conn net.Conn, seq uint32) {
 	sendTo := make([]byte, 0)
 
+	var length uint32 = 0
 	//seq
 	{
+		length += 4
+
 		arr := make([]byte, 4)
 		binary.LittleEndian.PutUint32(arr, seq)
 		sendTo = append(sendTo, arr...)
@@ -62,6 +68,8 @@ func SendPong(conn net.Conn, seq uint32) {
 
 	//type
 	{
+		length += 4
+
 		arr := make([]byte, 4)
 		binary.LittleEndian.PutUint32(arr, uint32(RequestType_Pong))
 		sendTo = append(sendTo, arr...)
@@ -70,8 +78,8 @@ func SendPong(conn net.Conn, seq uint32) {
 	//length
 	{
 		arr := make([]byte, 4)
-		binary.LittleEndian.PutUint32(arr, uint32(0))
-		sendTo = append(sendTo, arr...)
+		binary.LittleEndian.PutUint32(arr, uint32(length))
+		sendTo = append(arr, sendTo...)
 	}
 	conn.Write(sendTo)
 
@@ -80,8 +88,11 @@ func SendPong(conn net.Conn, seq uint32) {
 func SendMsg(conn net.Conn, seq uint32, msg string) {
 	sendTo := make([]byte, 0)
 
+	var length uint32 = 0
 	//seq
 	{
+		length += 4
+
 		arr := make([]byte, 4)
 		binary.LittleEndian.PutUint32(arr, seq)
 		sendTo = append(sendTo, arr...)
@@ -89,6 +100,8 @@ func SendMsg(conn net.Conn, seq uint32, msg string) {
 
 	//type
 	{
+		length += 4
+
 		arr := make([]byte, 4)
 		binary.LittleEndian.PutUint32(arr, uint32(RequestType_SendMsg))
 		sendTo = append(sendTo, arr...)
@@ -96,14 +109,12 @@ func SendMsg(conn net.Conn, seq uint32, msg string) {
 
 	//length
 	{
-		var length uint32 = 0
-
 		count := bytes.Count([]byte(msg), nil)
 		length += uint32(count)
 
 		arr := make([]byte, 4)
 		binary.LittleEndian.PutUint32(arr, uint32(length))
-		sendTo = append(sendTo, arr...)
+		sendTo = append(arr, sendTo...)
 
 		arr_msg := []byte(msg)
 		sendTo = append(sendTo, arr_msg...)
@@ -116,8 +127,12 @@ func SendMsg(conn net.Conn, seq uint32, msg string) {
 func SendRespMsg(conn net.Conn, seq uint32) {
 	sendTo := make([]byte, 0)
 
+	var length uint32 = 0
+
 	//seq
 	{
+		length += 4
+
 		arr := make([]byte, 4)
 		binary.LittleEndian.PutUint32(arr, seq)
 		sendTo = append(sendTo, arr...)
@@ -125,6 +140,8 @@ func SendRespMsg(conn net.Conn, seq uint32) {
 
 	//type
 	{
+		length += 4
+
 		arr := make([]byte, 4)
 		binary.LittleEndian.PutUint32(arr, uint32(RequestType_RespMsg))
 		sendTo = append(sendTo, arr...)
@@ -133,7 +150,7 @@ func SendRespMsg(conn net.Conn, seq uint32) {
 	//length
 	{
 		arr := make([]byte, 4)
-		binary.LittleEndian.PutUint32(arr, uint32(0))
+		binary.LittleEndian.PutUint32(arr, uint32(length))
 		sendTo = append(arr, sendTo...)
 	}
 	conn.Write(sendTo)
