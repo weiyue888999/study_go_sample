@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 	"time"
-	"weiguangyue/net/base"
+	"weiguangyue/net"
 )
 
 type ServerConfig struct {
@@ -25,6 +25,7 @@ type TcpServer struct {
 	clientCount  int
 	serverConfig ServerConfig
 	listener     net.Listener
+	clients      map[int]*Client
 }
 
 func (tcpServer *TcpServer) getNextId() int {
@@ -35,9 +36,11 @@ func (tcpServer *TcpServer) getNextId() int {
 func (tcpServer *TcpServer) processNewConnection(client *Client) {
 
 	tcpServer.clientCount++
+	tcpServer.clients[client.id] = client
 
 	defer func(client *Client) {
 		tcpServer.clientCount--
+		delete(tcpServer.clients, client.id)
 		log.Printf("leave client id=%d\n", client.id)
 		client.Close()
 	}(client)
@@ -68,6 +71,54 @@ func (tcpServer *TcpServer) processNewConnection(client *Client) {
 	}
 }
 
+func listene_new_conn(ln net.Listener, tcpServer *TcpServer) {
+
+	for {
+		log.Printf("waiting new connection \n")
+		conn, err := ln.Accept()
+		if err != nil {
+			// handle error
+			log.Printf("accept error:%s\n", err.Error())
+			conn.Close()
+		} else {
+			client := &Client{
+				id:   tcpServer.getNextId(),
+				name: "client-",
+				conn: conn,
+			}
+			if tcpServer.clientCount < tcpServer.serverConfig.maxConnectClient {
+
+				log.Printf("accept new connection,clientId=%d\n", client.id)
+				tcpServer.processNewConnection(client)
+			} else {
+				log.Printf("force close client cuase clientCount[%d] >= maxConnectClient[%d]\n",
+					tcpServer.clientCount,
+					tcpServer.serverConfig.maxConnectClient)
+				client.Close()
+			}
+		}
+	}
+}
+
+//先使用睡眠方式进行模拟定时器
+func ping_timer(tcpServer *TcpServer) {
+
+	for {
+		time.Sleep(time.Duration(2) * time.Second)
+
+		if len(tcpServer.clients) <= 0 {
+
+			log.Printf("no clients for ping\n")
+			continue
+		}
+		for id, client := range tcpServer.clients {
+
+			log.Printf("ping client[id=%d]\n", id)
+			net.SendPing(client.conn)
+		}
+	}
+}
+
 func (tcpServer *TcpServer) Startup() error {
 	ln, err := net.Listen("tcp", ":8080")
 	if err != nil {
@@ -77,35 +128,10 @@ func (tcpServer *TcpServer) Startup() error {
 
 	tcpServer.listener = ln
 
-	go func(ln net.Listener) {
+	go listene_new_conn(ln, tcpServer)
 
-		for {
-			log.Printf("waiting new connection \n")
-			conn, err := ln.Accept()
-			if err != nil {
-				// handle error
-				log.Printf("accept error:%s\n", err.Error())
-				conn.Close()
-			} else {
-				client := &Client{
-					id:   tcpServer.getNextId(),
-					name: "client-",
-					conn: conn,
-				}
-				if tcpServer.clientCount < tcpServer.serverConfig.maxConnectClient {
+	go ping_timer(tcpServer)
 
-					log.Printf("accept new connection,clientId=%d\n", client.id)
-					tcpServer.processNewConnection(client)
-				} else {
-					log.Printf("force close client cuase clientCount[%d] >= maxConnectClient[%d]\n",
-						tcpServer.clientCount,
-						tcpServer.serverConfig.maxConnectClient)
-					client.Close()
-				}
-			}
-		}
-
-	}(ln)
 	return nil
 }
 
