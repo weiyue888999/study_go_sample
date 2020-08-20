@@ -1,4 +1,4 @@
-package main
+package net
 
 import "fmt"
 
@@ -15,6 +15,7 @@ type student struct {
 	man
 }
 
+/*
 func main() {
 
 	m := man{id: 1}
@@ -31,3 +32,4 @@ func main() {
 	}
 	s.display()
 }
+**/

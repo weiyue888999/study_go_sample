@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 	"time"
-	"weiguangyue/net"
+	mynet "weiguangyue/net"
 )
 
 type ServerConfig struct {
@@ -114,7 +114,7 @@ func ping_timer(tcpServer *TcpServer) {
 		for id, client := range tcpServer.clients {
 
 			log.Printf("ping client[id=%d]\n", id)
-			net.SendPing(client.conn)
+			mynet.SendPing(client.conn, client.NextSeq())
 		}
 	}
 }
@@ -127,6 +127,7 @@ func (tcpServer *TcpServer) Startup() error {
 	}
 
 	tcpServer.listener = ln
+	tcpServer.clients = make(map[int]*Client)
 
 	go listene_new_conn(ln, tcpServer)
 
@@ -143,6 +144,13 @@ type Client struct {
 	id   int
 	name string
 	conn net.Conn
+	seq  uint32
+}
+
+func (client *Client) NextSeq() uint32 {
+
+	client.seq++
+	return client.seq
 }
 
 func (client Client) String() string {
@@ -162,8 +170,6 @@ func init() {
 }
 
 func main() {
-
-	base.Test()
 
 	log.Println("init main")
 	serverConfig := ServerConfig{
