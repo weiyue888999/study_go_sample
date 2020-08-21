@@ -1,26 +1,15 @@
-package main
+package netbase
 
 import (
 	"encoding/binary"
 	"log"
 	"net"
 	"os"
-	//	mynet "weiguangyue/net"
 )
 
-func main() {
-	log.SetPrefix("")
-	log.SetFlags(log.Ldate | log.Lmicroseconds | log.Llongfile)
-
-	log.Printf("connect...\n")
-	conn, err := net.Dial("tcp", "localhost:8080")
-	if err != nil {
-		// handle error
-		log.Printf("connect error:%s\n", err.Error())
-		os.Exit(-1)
-	}
-	log.Printf("connect success!!!\n")
-
+func ReadConn( //
+	conn net.Conn, //
+	handlerMapping map[uint32]func(seq uint32, packet_type RequestType, data []byte, conn net.Conn)) {
 	for {
 
 		//read length
@@ -69,26 +58,40 @@ func main() {
 
 				read_total_cnt += cnt
 				if uint32(read_total_cnt) == length {
-					process_packet(length, packet_array)
+					process_packet(length, packet_array, conn, handlerMapping)
 				} else {
 					goto read_body_continue
 				}
 			} else if cnt == 0 {
 
-				//read again
+				//read again ???
 			} else {
 				log.Printf("read error\n")
 				os.Exit(-1)
 			}
 		}
 	}
-	conn.Close()
 }
 
-func process_packet(length uint32, array []byte) {
+func process_packet( //
+	length uint32, //
+	array []byte, //
+	conn net.Conn, //
+	handlerMapping map[uint32]func(seq uint32, packet_type RequestType, data []byte, conn net.Conn)) { //
 
 	var seq uint32 = binary.LittleEndian.Uint32(array[0:4])
 	var packet_type uint32 = binary.LittleEndian.Uint32(array[4:8])
+	var data []byte = make([]byte, 0)
+	if length > 4+4 {
+		data = array[8:length]
+	}
+	fun, found := handlerMapping[uint32(packet_type)]
 
-	log.Printf("process packet.length:%d,seq:%d,packet_type:%d.\n", length, seq, packet_type)
+	if found {
+		log.Printf("process packet,seq:%d,packet_type:%d\n", seq, packet_type)
+
+		fun(seq, RequestType(packet_type), data, conn)
+	} else {
+		log.Printf("unknow packet type:%d\n", packet_type)
+	}
 }
