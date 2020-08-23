@@ -4,7 +4,7 @@ import "fmt"
 
 func init() {
 
-	fmt.Println("init package base")
+	fmt.Println("init package netbase")
 }
 
 func Test() {

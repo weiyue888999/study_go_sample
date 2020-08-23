@@ -7,14 +7,18 @@ import (
 )
 
 type Channel interface {
+	SendPing()
+	SendPong(seq uint32)
+	SendMsg(msg []byte)
+	SendRespMsg(seq uint32)
+
 	Id() uint32
-	Write(msg []byte)
 	IsClose() bool
 	Close()
 }
 
 type MessageHandler interface {
-	handle(channel Channel, msg []byte)
+	Handle(channel Channel, msg []byte)
 }
 
 /**
@@ -82,24 +86,32 @@ func doAccpet(serverChannel *ServerChannel) {
 			log.Printf("accept new client[id=%d]\n", cid)
 
 			clientChannel := &ClientChannel{
-				cid:  cid,
-				conn: conn,
+				seq:            0,
+				cls:            false,
+				cid:            cid,
+				conn:           conn,
+				messageHandler: serverChannel.messageHandler,
 			}
 
 			serverChannel.clients[cid] = clientChannel
+
+			clientChannel.readClientChannel()
 		}
 	}
 }
 
-func Bind(address string) (serverChannel *ServerChannel, err error) {
+func Bind(address string, messageHandler MessageHandler) (serverChannel *ServerChannel, err error) {
 
 	ln, err := net.Listen("tcp", address)
 	if err != nil {
 		return nil, err
 	}
 	sc := &ServerChannel{
-		cls: false,
-		ln:  ln,
+		cid:            0,
+		cls:            false,
+		ln:             ln,
+		clients:        make(map[uint32]*ClientChannel),
+		messageHandler: messageHandler,
 	}
 	go doAccpet(sc)
 
@@ -107,6 +119,7 @@ func Bind(address string) (serverChannel *ServerChannel, err error) {
 }
 
 type ClientChannel struct {
+	seq            uint32
 	cls            bool
 	cid            uint32
 	conn           net.Conn
@@ -121,23 +134,29 @@ func (clientChannel *ClientChannel) readClientChannel() {
 func doReadClientChannelRoutine(clientChannel *ClientChannel) {
 
 	err := doReadClientChannel(clientChannel)
-	log.Printf("read error: %s\n", err.Error())
+	if err.Error() == "EOF" {
+		log.Printf("close")
+	} else {
+		log.Printf("read error: %s\n", err.Error())
+	}
+
 }
 
 func doReadClientChannel(clientChannel *ClientChannel) error {
 
 	conn := clientChannel.conn
 
+read_continue_loop:
 	for {
 		var length uint32 = 0
+		var need_to_read_size int = 4
 
-		need_to_read_size := 4
-		buf := make([]byte, 0)
+		var buf []byte = make([]byte, 0)
+
 		for {
 			buf_to_read := make([]byte, need_to_read_size)
 
 		read_length_continue:
-
 			cnt, err := conn.Read(buf_to_read)
 			if err != nil {
 				return err
@@ -146,27 +165,31 @@ func doReadClientChannel(clientChannel *ClientChannel) error {
 				need_to_read_size -= cnt
 
 				if need_to_read_size > 0 {
-					//FIXME one times to copy , not split
 					temp := buf_to_read[0:cnt]
 					buf = append(buf, temp...)
 					goto read_length_continue
+				} else if need_to_read_size == 0 {
+
+					temp := buf_to_read[0:cnt]
+					buf = append(buf, temp...)
+
+					length = binary.LittleEndian.Uint32(buf)
+					goto read_data_loop
 				}
-				length = binary.LittleEndian.Uint32(buf)
-				break
 			} else if cnt == 0 {
-				//log.Printf("read again\n")
+				goto read_length_continue
 			} else {
-				log.Printf("read error\n")
+				return nil
 			}
 		}
+	read_data_loop:
 
 		need_to_read_size = int(length)
 		buf = make([]byte, 0)
 		for {
 
+		read_data_conitnue:
 			buf_to_read := make([]byte, need_to_read_size)
-
-		read_data_continue:
 
 			cnt, err := conn.Read(buf_to_read)
 			if err != nil {
@@ -176,18 +199,24 @@ func doReadClientChannel(clientChannel *ClientChannel) error {
 
 					need_to_read_size -= cnt
 
-					if uint32(need_to_read_size) > 0 {
+					if need_to_read_size > 0 {
 						temp := buf_to_read[0:cnt]
 						buf = append(buf, temp...)
-						goto read_data_continue
-					}
-					clientChannel.messageHandler.handle(clientChannel, buf)
-					break
 
+						goto read_data_conitnue
+
+					} else if need_to_read_size == 0 {
+						temp := buf_to_read[0:cnt]
+						buf = append(buf, temp...)
+
+						clientChannel.messageHandler.Handle(clientChannel, buf)
+
+						goto read_continue_loop
+					}
 				} else if cnt == 0 {
 					//read again ???
 				} else {
-					log.Printf("read error\n")
+					return nil
 				}
 			}
 		}
@@ -198,6 +227,12 @@ func doReadClientChannel(clientChannel *ClientChannel) error {
 func (clientChannel ClientChannel) Id() uint32 {
 
 	return clientChannel.cid
+}
+
+func (clientChannel *ClientChannel) nextSeq() uint32 {
+
+	clientChannel.seq++
+	return clientChannel.seq
 }
 
 func (clientChannel *ClientChannel) IsClose() bool {
@@ -217,17 +252,27 @@ func (clientChannel *ClientChannel) Close() {
 	log.Printf("close client[id=%d]\n", clientChannel.cid)
 }
 
-func (clientChannel *ClientChannel) Write(msg []byte) {
+func (clientChannel *ClientChannel) SendPing() {
 
-	cnt, err := clientChannel.conn.Write(msg)
-	if err != nil {
-		log.Printf("wirte error:%s\n", err.Error())
-	} else {
-		log.Printf("wirte msg:%d\n", cnt)
-	}
+	SendPing(clientChannel.conn, clientChannel.nextSeq())
 }
 
-func Connect(remoteAddress string) (clientChannel *ClientChannel, err error) {
+func (clientChannel *ClientChannel) SendPong(seq uint32) {
+
+	SendPong(clientChannel.conn, seq)
+}
+
+func (clientChannel *ClientChannel) SendMsg(msg []byte) {
+
+	SendMsg(clientChannel.conn, clientChannel.nextSeq(), msg)
+}
+
+func (clientChannel *ClientChannel) SendRespMsg(seq uint32) {
+
+	SendRespMsg(clientChannel.conn, seq)
+
+}
+func Connect(remoteAddress string, messageHandler MessageHandler) (clientChannel *ClientChannel, err error) {
 
 	log.Printf("connect %s\n", remoteAddress)
 	conn, err := net.Dial("tcp", remoteAddress)
@@ -238,8 +283,14 @@ func Connect(remoteAddress string) (clientChannel *ClientChannel, err error) {
 	log.Printf("connect %s success \n", remoteAddress)
 
 	cc := &ClientChannel{
-		cid:  0,
-		conn: conn,
+		seq:            0,
+		cls:            false,
+		cid:            0,
+		conn:           conn,
+		messageHandler: messageHandler,
 	}
+
+	cc.readClientChannel()
+
 	return cc, nil
 }
